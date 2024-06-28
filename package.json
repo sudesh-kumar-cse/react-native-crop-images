@@ -1,40 +1,18 @@
 {
-  "name": "react-native-crop-image",
+  "name": "react-native-crop-images",
   "version": "0.0.1",
   "description": "Image Cropping Library for Android and iOS",
   "main": "index.js",
-  "files": [
-    "src",
-    "lib",
-    "android",
-    "ios",
-    "cpp",
-    "*.podspec",
-    "!ios/build",
-    "!android/build",
-    "!android/gradle",
-    "!android/gradlew",
-    "!android/gradlew.bat",
-    "!android/local.properties",
-    "!**/__tests__",
-    "!**/__fixtures__",
-    "!**/__mocks__",
-    "!**/.*"
-  ],
   "scripts": {
-    "example": "yarn workspace react-native-crop-image-example",
-    "test": "jest",
-    "typecheck": "tsc --noEmit",
-    "lint": "eslint \"**/*.{js,ts,tsx}\"",
-    "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",
-    "prepare": "bob build",
-    "release": "release-it"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
     "react-native",
     "react-native-image-picker",
     "react-native-crop-image",
+    "react-native-crop-images",
     "crop-image",
+    "crop-images",
     "image-crop",
     "circular-image-crop",
     "rectangular-image-crop",
@@ -44,14 +22,14 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sudesh-kumar-cse/react-native-crop-image.git"
+    "url": "git+https://github.com/sudesh-kumar-cse/react-native-crop-images.git"
   },
   "author": "sudesh-kumar-cse <sudeshcs006@gmail.com> (https://github.com/sudesh-kumar-cse)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/sudesh-kumar-cse/react-native-crop-image/issues"
+    "url": "https://github.com/sudesh-kumar-cse/react-native-crop-images/issues"
   },
-  "homepage": "https://github.com/sudesh-kumar-cse/react-native-crop-image#readme",
+  "homepage": "https://github.com/sudesh-kumar-cse/react-native-crop-images#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },

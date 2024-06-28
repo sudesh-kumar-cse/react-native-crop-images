@@ -1,11 +1,11 @@
-# react-native-crop-image
+# react-native-crop-images
 
 Image Cropping Library for Android and iOS
 
 ## Installation
 
 ```sh
-npm install react-native-crop-image
+npm install react-native-crop-images
 ```
 
 ## Usage
