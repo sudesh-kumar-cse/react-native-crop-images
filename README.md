@@ -10,13 +10,7 @@ npm install react-native-crop-image
 
 ## Usage
 
-```js
-import { multiply } from 'react-native-crop-image';
 
-// ...
-
-const result = await multiply(3, 7);
-```
 
 ## Contributing
 
