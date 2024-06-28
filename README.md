@@ -63,8 +63,40 @@ dependencies {
 
 ## Usage
 
-Use like so:
+### Configuration
+```javascript
+CropImage.configure({
+    cropType: 'rectangular', //circular or rectangular
+    freeStyleCropEnabled: true, // true or false
+    showCropFrame: true, // true or false
+    showCropGrid: true, // true or false
+    dimmedLayerColor: '#99000000', // any color 
+});
+```
 
+
+### Pick Image
+
+```javascript
+CropImage.pickImage()
+        .then(uri => {
+             console.log(uri);
+        })
+        .catch(error => console.error(error));
+```
+
+
+### Capture Image
+
+```javascript
+ CropImage.captureImage()
+            .then(uri => {
+                console.log(uri);
+            })
+            .catch(error => console.error(error));
+```
+
+### Sample Code
 ```javascript
 import React from 'react'
 import { StyleSheet, Text, View, Image, Pressable } from 'react-native'
@@ -72,7 +104,11 @@ import CropImage from 'react-native-crop-image';
 
 
 CropImage.configure({
-    cropType: 'circular',
+    cropType: 'rectangular', //circular or rectangular
+    freeStyleCropEnabled: true, // true or false
+    showCropFrame: true, // true or false
+    showCropGrid: true, // true or false
+    dimmedLayerColor: '#99000000', // any color 
 });
 
 const App = () => {
@@ -118,6 +154,31 @@ const styles = StyleSheet.create({
     },
 })
 ```
+
+
+
+### Request Object
+
+| Property             |             Type             | Description                                                                                                                                                                                                                                               |
+| -------------------- | :--------------------------: | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| cropType             | string (default rectangular) | The `cropType` property of the image cropping library specifies the type of cropping area used. It can be either 'rectangular' or 'circular'. This property determines the shape of the selectable crop area when using the library's crop functionality. |
+| freeStyleCropEnabled |     bool (default true)      | When `freeStyleCropEnabled` is set to true, users can freely adjust the cropping frame according to their preference, allowing for non-fixed cropping dimensions.                                                                                         |
+| showCropFrame        |     bool (default true)      | When `showCropFrame` is set to true, the crop frame lines are displayed in the crop view, aiding users in adjusting the cropping area.                                                                                                                    |
+| showCropGrid         |     bool (default true)      | When `showCropGrid` is set to true, a grid is displayed within the crop frame, providing a visual aid for precise cropping.                                                                                                                               |
+| dimmedLayerColor     |  any (default `#99000000`)   | Specifies the color used to dim the background behind the crop image UI. You can use direct color names (e.g., "black") or specify colors using an ARGB hexadecimal format (e.g., #99000000 for semi-transparent black).                                  |
+|                      |
+
+
+
+### Response String
+
+| Property |  Type  | Description                                                                                                   |
+| -------- | :----: | :------------------------------------------------------------------------------------------------------------ |
+| uri      | string | The URI of the selected image returned by the function `CropImage.pickImage()` or `CropImage.captureImage()`. |
+|          |
+
+
+
 
 ## Contribution
 
