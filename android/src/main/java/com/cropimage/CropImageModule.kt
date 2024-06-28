@@ -196,7 +196,9 @@ class CropImageModule(reactContext: ReactApplicationContext) : ReactContextBaseJ
         if (options?.getString("cropType") == "circular") {
             val bitmap = BitmapFactory.decodeStream(reactApplicationContext.contentResolver.openInputStream(uri))
             val circularBitmap = getCircularBitmap(bitmap)
-            val file = File(reactApplicationContext.cacheDir, "circular_cropped.png")
+            val timeStamp: String = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+            val fileName = "${NAME}_${timeStamp}.png"
+            val file = File(reactApplicationContext.cacheDir, fileName)
             val outputStream = FileOutputStream(file)
             circularBitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
             outputStream.close()
