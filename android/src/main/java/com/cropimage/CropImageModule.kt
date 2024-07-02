@@ -25,6 +25,10 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
 import com.yalantis.ucrop.UCrop
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -46,29 +50,9 @@ class CropImageModule(reactContext: ReactApplicationContext) : ReactContextBaseJ
     init {
         reactContext.addActivityEventListener(object : BaseActivityEventListener() {
             override fun onActivityResult(activity: Activity?, requestCode: Int, resultCode: Int, data: Intent?) {
-                if (requestCode == IMAGE_PICKER_REQUEST && resultCode == Activity.RESULT_OK) {
-                    data?.data?.let { uri ->
-                        startCropping(uri)
-                    } ?: promise?.reject("ERROR", "Failed to pick image")
-                } else if (requestCode == IMAGE_CAPTURE_REQUEST && resultCode == Activity.RESULT_OK) {
-                    currentPhotoPath?.let { path ->
-                        val photoFile = File(path)
-                        val photoUri = Uri.fromFile(photoFile)
-                        startCropping(photoUri)
-                    } ?: promise?.reject("ERROR", "Failed to capture image")
-                } else if (requestCode == UCrop.REQUEST_CROP && resultCode == Activity.RESULT_OK) {
-                    val resultUri = UCrop.getOutput(data!!)
-                    resultUri?.let { uri ->
-                        val croppedUri = if (options?.getString("cropType") == "circular") {
-                            applyCircularMask(uri)
-                        } else {
-                            uri // Return original URI if cropType is rectangular
-                        }
-                        promise?.resolve(croppedUri.toString())
-                    } ?: promise?.reject("ERROR", "Failed to crop image")
-                } else if (resultCode == UCrop.RESULT_ERROR) {
-                    val cropError = UCrop.getError(data!!)
-                    promise?.reject("ERROR", cropError?.message ?: "Unknown error during image cropping")
+                // Launch coroutine to handle activity result
+                CoroutineScope(Dispatchers.Main).launch {
+                    handleActivityResult(requestCode, resultCode, data)
                 }
             }
         })
@@ -143,12 +127,78 @@ class CropImageModule(reactContext: ReactApplicationContext) : ReactContextBaseJ
         }
     }
 
+    private suspend fun handleActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        when (requestCode) {
+
+            IMAGE_PICKER_REQUEST -> {
+                if (resultCode == Activity.RESULT_OK) {
+                    data?.data?.let { uri ->
+                        startCropping(uri)
+                    } ?: promise?.reject("ERROR", "Failed to pick image")
+                } else {
+                    promise?.reject("ERROR", "Image picker canceled")
+                }
+            }
+
+            IMAGE_CAPTURE_REQUEST -> {
+                if (resultCode == Activity.RESULT_OK) {
+                    currentPhotoPath?.let { path ->
+                        val photoFile = File(path)
+                        val photoUri = Uri.fromFile(photoFile)
+                        startCropping(photoUri)
+                    } ?: promise?.reject("ERROR", "Failed to capture image")
+                } else {
+                    promise?.reject("ERROR", "Image capture canceled")
+                }
+            }
+
+            UCrop.REQUEST_CROP -> {
+                if (resultCode == Activity.RESULT_OK) {
+                    val resultUri = UCrop.getOutput(data!!)
+                    resultUri?.let { uri ->
+                        val croppedUri = if (options?.getString("cropType") == "circular") {
+                            applyCircularMask(uri)
+                        } else {
+                            uri // Return original URI if cropType is rectangular
+                        }
+                        promise?.resolve(croppedUri.toString())
+                    } ?: promise?.reject("ERROR", "Failed to crop image")
+                }
+                else if (resultCode == UCrop.RESULT_ERROR) {
+                    val cropError = UCrop.getError(data!!)
+                    promise?.reject(
+                        "ERROR",
+                        cropError?.message ?: "Unknown error during image cropping"
+                    )
+                }
+                else {
+                    promise?.reject("ERROR", "User canceled image cropping")
+                }
+            }
+
+            else -> {
+                promise?.reject("ERROR", "Unhandled activity result")
+            }
+        }
+    }
+
     private fun startCropping(sourceUri: Uri) {
-        val destinationUri = Uri.fromFile(File(reactApplicationContext.cacheDir, "cropped"))
-        UCrop.of(sourceUri, destinationUri)
-            .withAspectRatio(1f, 1f)
-            .withOptions(getUCropOptions())
-            .start(currentActivity!!)
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val destinationUri = Uri.fromFile(File(reactApplicationContext.cacheDir, "cropped"))
+                // Potentially add steps here to optimize the image before cropping
+                withContext(Dispatchers.Main) {
+                    // Ensure UCrop activity is started on the main thread
+                    UCrop.of(sourceUri, destinationUri)
+                        .withAspectRatio(1f, 1f)
+                        .withOptions(getUCropOptions())
+                        .start(currentActivity!!)
+                }
+            } catch (e: Exception) {
+                // Handle any exceptions, potentially logging or notifying the user
+                promise?.reject("ERROR", "Exception during image cropping: ${e.message}")
+            }
+        }
     }
 
     private fun getUCropOptions(): UCrop.Options {
