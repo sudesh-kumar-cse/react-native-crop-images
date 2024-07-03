@@ -70,7 +70,8 @@ CropImage.configure({
     freeStyleCropEnabled: true, // true or false
     showCropFrame: true, // true or false
     showCropGrid: true, // true or false
-    dimmedLayerColor: '#99000000', // any color 
+    dimmedLayerColor: '#99000000', // any color
+    imageQuality: 80, // integer, 60-100
 });
 ```
 
@@ -109,6 +110,7 @@ CropImage.configure({
     showCropFrame: true, // true or false
     showCropGrid: true, // true or false
     dimmedLayerColor: '#99000000', // any color 
+    imageQuality: '80', // between 60 to 100
 });
 
 const App = () => {
@@ -166,6 +168,9 @@ const styles = StyleSheet.create({
 | showCropFrame        |     bool (default true)      | When `showCropFrame` is set to true, the crop frame lines are displayed in the crop view, aiding users in adjusting the cropping area.                                                                                                                    |
 | showCropGrid         |     bool (default true)      | When `showCropGrid` is set to true, a grid is displayed within the crop frame, providing a visual aid for precise cropping.                                                                                                                               |
 | dimmedLayerColor     |  any (default `#99000000`)   | Specifies the color used to dim the background behind the crop image UI. You can use direct color names (e.g., "black") or specify colors using an ARGB hexadecimal format (e.g., #99000000 for semi-transparent black).                                  |
+|                      |
+| imageQuality     |  integer (default `60`)   | When `imageQuality` is set to an integer between 60 (lower quality) and 100 (highest quality), it determines the quality of the image.
+.                                  |
 |                      |
 
 

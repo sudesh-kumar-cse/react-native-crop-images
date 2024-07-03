@@ -37,7 +37,8 @@ import java.util.Date
 import java.util.Locale
 
 
-class CropImageModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
+class CropImageModule(reactContext: ReactApplicationContext) :
+    ReactContextBaseJavaModule(reactContext) {
 
     private var promise: Promise? = null
     private var options: ReadableMap? = null
@@ -49,7 +50,12 @@ class CropImageModule(reactContext: ReactApplicationContext) : ReactContextBaseJ
 
     init {
         reactContext.addActivityEventListener(object : BaseActivityEventListener() {
-            override fun onActivityResult(activity: Activity?, requestCode: Int, resultCode: Int, data: Intent?) {
+            override fun onActivityResult(
+                activity: Activity?,
+                requestCode: Int,
+                resultCode: Int,
+                data: Intent?
+            ) {
                 // Launch coroutine to handle activity result
                 CoroutineScope(Dispatchers.Main).launch {
                     handleActivityResult(requestCode, resultCode, data)
@@ -116,8 +122,10 @@ class CropImageModule(reactContext: ReactApplicationContext) : ReactContextBaseJ
     }
 
     private fun createImageFile(): File? {
-        val timeStamp: String = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-        val storageDir: File = reactApplicationContext.getExternalFilesDir(Environment.DIRECTORY_PICTURES)!!
+        val timeStamp: String =
+            SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        val storageDir: File =
+            reactApplicationContext.getExternalFilesDir(Environment.DIRECTORY_PICTURES)!!
         return File.createTempFile(
             "JPEG_${timeStamp}_", /* prefix */
             ".jpg", /* suffix */
@@ -163,15 +171,13 @@ class CropImageModule(reactContext: ReactApplicationContext) : ReactContextBaseJ
                         }
                         promise?.resolve(croppedUri.toString())
                     } ?: promise?.reject("ERROR", "Failed to crop image")
-                }
-                else if (resultCode == UCrop.RESULT_ERROR) {
+                } else if (resultCode == UCrop.RESULT_ERROR) {
                     val cropError = UCrop.getError(data!!)
                     promise?.reject(
                         "ERROR",
                         cropError?.message ?: "Unknown error during image cropping"
                     )
-                }
-                else {
+                } else {
                     promise?.reject("ERROR", "User canceled image cropping")
                 }
             }
@@ -212,7 +218,9 @@ class CropImageModule(reactContext: ReactApplicationContext) : ReactContextBaseJ
 
         // Check for freeStyleCropEnabled key
         if (this.options?.hasKey("freeStyleCropEnabled") == true) {
-            options.setFreeStyleCropEnabled(this.options?.getBoolean("freeStyleCropEnabled") ?: false)
+            options.setFreeStyleCropEnabled(
+                this.options?.getBoolean("freeStyleCropEnabled") ?: false
+            )
         } else {
             options.setFreeStyleCropEnabled(true) // Default value
         }
@@ -244,13 +252,26 @@ class CropImageModule(reactContext: ReactApplicationContext) : ReactContextBaseJ
 
     private fun applyCircularMask(uri: Uri): Uri {
         if (options?.getString("cropType") == "circular") {
-            val bitmap = BitmapFactory.decodeStream(reactApplicationContext.contentResolver.openInputStream(uri))
+            val bitmap = BitmapFactory.decodeStream(
+                reactApplicationContext.contentResolver.openInputStream(uri)
+            )
             val circularBitmap = getCircularBitmap(bitmap)
-            val timeStamp: String = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+            val timeStamp: String =
+                SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
             val fileName = "${NAME}_${timeStamp}.png"
             val file = File(reactApplicationContext.cacheDir, fileName)
             val outputStream = FileOutputStream(file)
-            circularBitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
+            val imageQuality = try {
+                val imageQualityString = if (this.options?.hasKey("imageQuality") == true) {
+                    this.options!!.getString("imageQuality")
+                } else {
+                    null
+                }
+                imageQualityString?.toInt()?.coerceIn(60, 100) ?: 60
+            } catch (e: NumberFormatException) {
+                60 // Default value in case of format exception
+            }
+            circularBitmap.compress(Bitmap.CompressFormat.PNG, imageQuality, outputStream)
             outputStream.close()
             return Uri.fromFile(file)
         } else {
