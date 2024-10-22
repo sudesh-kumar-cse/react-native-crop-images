@@ -3,7 +3,7 @@
 #import <UIKit/UIKit.h>
 #import "TOCropViewController.h"
 
-@interface ImagePickerModule : NSObject <RCTBridgeModule, UIImagePickerControllerDelegate, UINavigationControllerDelegate, TOCropViewControllerDelegate>
+@interface CropImage : NSObject <RCTBridgeModule, UIImagePickerControllerDelegate, UINavigationControllerDelegate, TOCropViewControllerDelegate>
 
 @property (nonatomic, strong) UIImagePickerController *imagePickerController;
 @property (nonatomic, copy) RCTPromiseResolveBlock resolve;
@@ -16,3 +16,4 @@
 @property (nonatomic, strong) NSString *cropType;
 
 @end
+
