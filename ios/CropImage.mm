@@ -131,11 +131,27 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
 }
 
 - (UIColor *)colorWithHexString:(NSString *)hexString {
-  unsigned rgbValue = 0;
-  NSScanner *scanner = [NSScanner scannerWithString:hexString];
-  [scanner setScanLocation:1]; // bypass '#' character
-  [scanner scanHexInt:&rgbValue];
-  return [UIColor colorWithRed:((rgbValue & 0xFF0000) >> 16) / 255.0 green:((rgbValue & 0x00FF00) >> 8) / 255.0 blue:(rgbValue & 0x0000FF) / 255.0 alpha:1.0];
+    // Check if the hex string is valid
+    if (hexString.length == 0) {
+        // Handle the case where the hex string is empty by returning a default color
+        return [UIColor blackColor]; // You can choose any default color you prefer
+    }
+
+    unsigned rgbValue = 0;
+    NSScanner *scanner = [NSScanner scannerWithString:hexString];
+    
+    // Ensure the string has a '#' character and it's valid to scan
+    if ([hexString hasPrefix:@"#"]) {
+        [scanner setScanLocation:1]; // bypass '#' character
+    }
+
+    [scanner scanHexInt:&rgbValue];
+    
+    return [UIColor colorWithRed:((rgbValue & 0xFF0000) >> 16) / 255.0
+                           green:((rgbValue & 0x00FF00) >> 8) / 255.0
+                            blue:(rgbValue & 0x0000FF) / 255.0
+                           alpha:1.0];
 }
+
 
 @end
