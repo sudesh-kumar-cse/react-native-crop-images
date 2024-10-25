@@ -47,13 +47,17 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
   NSLog(@"presentImagePickerController: Attempting to present image picker.");
   UIViewController *rootViewController = [UIApplication sharedApplication].delegate.window.rootViewController;
   
-  if (rootViewController) {
+  if (rootViewController.presentedViewController) {
+    NSLog(@"Warning: A modal is already being presented. Dismissing current modal before presenting new one.");
+    [rootViewController.presentedViewController dismissViewControllerAnimated:NO completion:^{
+      [rootViewController presentViewController:self.imagePickerController animated:YES completion:^{
+        NSLog(@"Image Picker presented successfully.");
+      }];
+    }];
+  } else {
     [rootViewController presentViewController:self.imagePickerController animated:YES completion:^{
       NSLog(@"Image Picker presented successfully.");
     }];
-  } else {
-    NSLog(@"Error: Root view controller is nil. Cannot present image picker.");
-    self.reject(@"ERROR", @"Root view controller is nil", nil);
   }
 }
 
