@@ -30,11 +30,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.io.IOException
+import java.io.FileOutputStream
 
 
 class CropImageModule(reactContext: ReactApplicationContext) :
@@ -137,11 +137,16 @@ class CropImageModule(reactContext: ReactApplicationContext) :
 
     private suspend fun handleActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         when (requestCode) {
-
             IMAGE_PICKER_REQUEST -> {
                 if (resultCode == Activity.RESULT_OK) {
                     data?.data?.let { uri ->
+                    // Check if cropping is enabled
+                    if (options?.getBoolean("cropEnabled") == true) {
                         startCropping(uri)
+                    } else {
+                        // Return the original uri if cropping is disabled
+                        promise?.resolve(uri.toString())
+                    }
                     } ?: promise?.reject("ERROR", "Failed to pick image")
                 } else {
                     promise?.reject("ERROR", "Image picker canceled")
@@ -153,7 +158,13 @@ class CropImageModule(reactContext: ReactApplicationContext) :
                     currentPhotoPath?.let { path ->
                         val photoFile = File(path)
                         val photoUri = Uri.fromFile(photoFile)
+                       // Check if cropping is enabled
+                    if (options?.getBoolean("cropEnabled") == true) {
                         startCropping(photoUri)
+                    } else {
+                        // Return the original uri if cropping is disabled
+                        promise?.resolve(photoUri.toString())
+                     }
                     } ?: promise?.reject("ERROR", "Failed to capture image")
                 } else {
                     promise?.reject("ERROR", "Image capture canceled")
