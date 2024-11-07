@@ -1,7 +1,7 @@
 # react-native-crop-images
 
 
-[![Download](https://img.shields.io/badge/Download-v0.0.13-ff69b4.svg) ](https://www.npmjs.com/package/react-native-crop-images)
+[![Download](https://img.shields.io/badge/Download-v0.0.14.alpha.1-ff69b4.svg) ](https://www.npmjs.com/package/react-native-crop-images)
 
 React Native app image cropping library 
 # Image Cropping Module for React Native
@@ -106,12 +106,14 @@ import CropImage from 'react-native-crop-image';
 
 
 CropImage.configure({
-    cropType: 'rectangular', //circular or rectangular
-    freeStyleCropEnabled: true, // true or false
-    showCropFrame: true, // true or false
-    showCropGrid: true, // true or false
+    cropEnabled: true, // true or false
+    cropType: 'circular', //circular or rectangular
+    freeStyleCropEnabled: false, // true or false
+    showCropFrame: false, // true or false
+    showCropGrid: false, // true or false
     dimmedLayerColor: '#99000000', // any color 
-    imageQuality: '80', // between 60 to 100
+    imageQuality: '60', // between 60 to 100
+    multipleImages:false, // true or false
 });
 
 const App = () => {
