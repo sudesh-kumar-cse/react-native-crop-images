@@ -73,6 +73,7 @@ CropImage.configure({
     showCropGrid: true, // true or false
     dimmedLayerColor: '#99000000', // any color
     imageQuality: 80, // integer, 60-100
+    multipleImages: true, // true or false
 });
 ```
 
