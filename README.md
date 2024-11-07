@@ -1,7 +1,7 @@
 # react-native-crop-images
 
 
-[![Download](https://img.shields.io/badge/Download-v0.0.14.alpha.3-ff69b4.svg) ](https://www.npmjs.com/package/react-native-crop-images)
+[![Download](https://img.shields.io/badge/Download-v0.0.14.alpha.4-ff69b4.svg) ](https://www.npmjs.com/package/react-native-crop-images)
 
 React Native app image cropping library 
 # Image Cropping Module for React Native
@@ -73,7 +73,7 @@ CropImage.configure({
     showCropGrid: true, // true or false
     dimmedLayerColor: '#99000000', // any color
     imageQuality: 80, // integer, 60-100
-    multipleImages: true, // true or false
+    multipleImage: true, // true or false
 });
 ```
 

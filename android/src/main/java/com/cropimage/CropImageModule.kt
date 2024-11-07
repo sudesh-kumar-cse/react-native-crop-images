@@ -76,7 +76,7 @@ class CropImageModule(reactContext: ReactApplicationContext) :
   fun pickImage(promise: Promise) {
     this.promise = promise
     val pickIntent = Intent(Intent.ACTION_PICK)
-    if (options?.getBoolean("multipleImages") == true) {
+    if (options?.getBoolean("multipleImage") == true) {
       // Support both modern and legacy methods
       pickIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
       pickIntent.action = Intent.ACTION_GET_CONTENT 
@@ -110,9 +110,9 @@ class CropImageModule(reactContext: ReactApplicationContext) :
 
     // Merge with default values
     mergedOptions.putBoolean(
-      "multipleImages",
-      if (options.hasKey("multipleImages")) options.getBoolean("multipleImages") else defaultOptions.getBoolean(
-        "multipleImages"
+      "multipleImage",
+      if (options.hasKey("multipleImage")) options.getBoolean("multipleImage") else defaultOptions.getBoolean(
+        "multipleImage"
       )
     )
     mergedOptions.putBoolean(
@@ -212,8 +212,8 @@ class CropImageModule(reactContext: ReactApplicationContext) :
     when (requestCode) {
       IMAGE_PICKER_REQUEST -> {
         if (resultCode == Activity.RESULT_OK) {
-          if (options?.getBoolean("multipleImages") == true) {
-            handleMultipleImages(data)
+          if (options?.getBoolean("multipleImage") == true) {
+            handleMultipleImage(data)
           } else {
             data?.data?.let { uri ->
               // Check if cropping is enabled
@@ -278,7 +278,7 @@ class CropImageModule(reactContext: ReactApplicationContext) :
     }
   }
 
-  private fun handleMultipleImages(data: Intent?) {
+  private fun handleMultipleImage(data: Intent?) {
     pendingUris.clear()
     processedUris.clear()
     processingCount.set(0)
@@ -483,7 +483,7 @@ class CropImageModule(reactContext: ReactApplicationContext) :
     const val IMAGE_CAPTURE_REQUEST = 2
 
     private val DEFAULT_CROP_ENABLED = true
-    private val DEFAULT_Multiple_IMAGES = false
+    private val DEFAULT_Multiple_IMAGE = false
     private val DEFAULT_CROP_TYPE = "rectangular"
     private val DEFAULT_FREE_STYLE_CROP_ENABLED = false
     private val DEFAULT_SHOW_CROP_FRAME = false
@@ -497,7 +497,6 @@ class CropImageModule(reactContext: ReactApplicationContext) :
   // Add getDefaultOptions function
   private fun getDefaultOptions(): ReadableMap {
     val defaultMap = Arguments.createMap().apply {
-      putBoolean("multipleImages", DEFAULT_Multiple_IMAGES)
       putBoolean("cropEnabled", DEFAULT_CROP_ENABLED)
       putString("cropType", DEFAULT_CROP_TYPE)
       putBoolean("freeStyleCropEnabled", DEFAULT_FREE_STYLE_CROP_ENABLED)
@@ -505,6 +504,7 @@ class CropImageModule(reactContext: ReactApplicationContext) :
       putBoolean("showCropGrid", DEFAULT_SHOW_CROP_GRID)
       putString("dimmedLayerColor", DEFAULT_DIMMED_LAYER_COLOR)
       putString("imageQuality", DEFAULT_IMAGE_QUALITY)
+      putBoolean("multipleImage", DEFAULT_Multiple_IMAGE)
     }
     return defaultMap
   }
