@@ -31,13 +31,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.io.IOException
-import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicInteger
-import com.facebook.react.bridge.WritableArray
 
 class CropImageModule(reactContext: ReactApplicationContext) :
   ReactContextBaseJavaModule(reactContext) {
@@ -78,10 +77,17 @@ class CropImageModule(reactContext: ReactApplicationContext) :
     this.promise = promise
     val pickIntent = Intent(Intent.ACTION_PICK)
     if (options?.getBoolean("multipleImages") == true) {
+      // Support both modern and legacy methods
       pickIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+      pickIntent.action = Intent.ACTION_GET_CONTENT 
     }
     pickIntent.type = "image/*"
-    currentActivity?.startActivityForResult(pickIntent, IMAGE_PICKER_REQUEST)
+    try {
+      currentActivity?.startActivityForResult(pickIntent, IMAGE_PICKER_REQUEST)
+    } catch (e: Exception) {
+      promise.reject("ERROR", "Failed to launch image picker: ${e.message}")
+    }
+
   }
 
   private fun checkCameraPermissions(): Boolean {
