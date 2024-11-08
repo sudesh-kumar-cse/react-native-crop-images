@@ -79,7 +79,8 @@ class CropImageModule(reactContext: ReactApplicationContext) :
     val pickIntent = Intent(Intent.ACTION_PICK)
     pickIntent.type = "image/*"
     pickIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, options?.getBoolean("multipleImage") == true)
-
+    pickIntent.action = Intent.ACTION_GET_CONTENT 
+    
     try {
         currentActivity?.startActivityForResult(pickIntent, IMAGE_PICKER_REQUEST)
     } catch (e: Exception) {

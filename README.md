@@ -1,7 +1,7 @@
 # react-native-crop-images
 
 
-[![Download](https://img.shields.io/badge/Download-v0.0.14.alpha.5-ff69b4.svg) ](https://www.npmjs.com/package/react-native-crop-images)
+[![Download](https://img.shields.io/badge/Download-v0.0.14.alpha.6-ff69b4.svg) ](https://www.npmjs.com/package/react-native-crop-images)
 
 React Native app image cropping library 
 # Image Cropping Module for React Native
