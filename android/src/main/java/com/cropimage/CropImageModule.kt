@@ -15,6 +15,7 @@ import android.graphics.Rect
 import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -76,19 +77,15 @@ class CropImageModule(reactContext: ReactApplicationContext) :
   fun pickImage(promise: Promise) {
     this.promise = promise
     val pickIntent = Intent(Intent.ACTION_PICK)
-    if (options?.getBoolean("multipleImage") == true) {
-      // Support both modern and legacy methods
-      pickIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-      pickIntent.action = Intent.ACTION_GET_CONTENT 
-    }
     pickIntent.type = "image/*"
-    try {
-      currentActivity?.startActivityForResult(pickIntent, IMAGE_PICKER_REQUEST)
-    } catch (e: Exception) {
-      promise.reject("ERROR", "Failed to launch image picker: ${e.message}")
-    }
+    pickIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, options?.getBoolean("multipleImage") == true)
 
-  }
+    try {
+        currentActivity?.startActivityForResult(pickIntent, IMAGE_PICKER_REQUEST)
+    } catch (e: Exception) {
+        promise.reject("ERROR", "Failed to launch image picker: ${e.message}")
+    }
+}
 
   private fun checkCameraPermissions(): Boolean {
     if (ContextCompat.checkSelfPermission(reactApplicationContext, Manifest.permission.CAMERA)
@@ -109,12 +106,6 @@ class CropImageModule(reactContext: ReactApplicationContext) :
     val mergedOptions = Arguments.createMap()
 
     // Merge with default values
-    mergedOptions.putBoolean(
-      "multipleImage",
-      if (options.hasKey("multipleImage")) options.getBoolean("multipleImage") else defaultOptions.getBoolean(
-        "multipleImage"
-      )
-    )
     mergedOptions.putBoolean(
       "cropEnabled",
       if (options.hasKey("cropEnabled")) options.getBoolean("cropEnabled") else defaultOptions.getBoolean(
@@ -149,16 +140,39 @@ class CropImageModule(reactContext: ReactApplicationContext) :
         "dimmedLayerColor"
       )
     )
-    mergedOptions.putString(
+
+    mergedOptions.putInt(
       "imageQuality",
       if (options.hasKey("imageQuality")) {
         try {
-          options.getString("imageQuality") ?: defaultOptions.getString("imageQuality")
+          options.getDouble("imageQuality").toInt() // Assumes `imageQuality` is a number
+        } catch (e: NumberFormatException) {
+          defaultOptions.getInt("imageQuality") // Fallback if format is invalid
         } catch (e: Exception) {
-          defaultOptions.getString("imageQuality")
+          defaultOptions.getInt("imageQuality") // General fallback for any other exception
         }
       } else {
-        defaultOptions.getString("imageQuality")
+        defaultOptions.getInt("imageQuality") // Fallback if key does not exist
+      }
+    )
+    mergedOptions.putBoolean(
+      "multipleImage",
+      if (options.hasKey("multipleImage")) options.getBoolean("multipleImage") else defaultOptions.getBoolean(
+        "multipleImage"
+      )
+    )
+    mergedOptions.putInt(
+      "maxImages",
+      if (options.hasKey("maxImages")) {
+        try {
+          options.getDouble("maxImages").toInt() // Assumes `imageQuality` is a number
+        } catch (e: NumberFormatException) {
+          defaultOptions.getInt("maxImages") // Fallback if format is invalid
+        } catch (e: Exception) {
+          defaultOptions.getInt("maxImages") // General fallback for any other exception
+        }
+      } else {
+        defaultOptions.getInt("maxImages") // Fallback if key does not exist
       }
     )
 
@@ -216,14 +230,18 @@ class CropImageModule(reactContext: ReactApplicationContext) :
             handleMultipleImage(data)
           } else {
             data?.data?.let { uri ->
-              // Check if cropping is enabled
               if (options?.getBoolean("cropEnabled") == true) {
                 startCropping(uri)
               } else {
-                // Return the original uri if cropping is disabled
-                // Compress the image before returning
                 val compressedUri = compressImage(uri)
-                promise?.resolve(compressedUri.toString())
+                val result = Arguments.createMap().apply {
+                  putString("uri", compressedUri.toString())
+                  val size = getImageSize(compressedUri)
+                  putInt("width", size.first)
+                  putInt("height", size.second)
+                  putDouble("size", getFileSizeInMB(compressedUri))
+                }
+                promise?.resolve(result)
               }
             } ?: promise?.reject("ERROR", "Failed to pick image")
           }
@@ -283,50 +301,67 @@ class CropImageModule(reactContext: ReactApplicationContext) :
     processedUris.clear()
     processingCount.set(0)
 
+    val maxImages = options?.getInt("maxImages") ?: DEFAULT_MAX_IMAGES
+
+    // Create a list to store URIs with their original indices
+    val indexedUris = mutableListOf<Pair<Int, Uri>>()
+
     when {
       data?.clipData != null -> {
         val clipData = data.clipData!!
-        for (i in 0 until clipData.itemCount) {
-          pendingUris.add(clipData.getItemAt(i).uri)
+        if (clipData.itemCount > maxImages) {
+          promise?.reject("ERROR", "You can select up to $maxImages images only.")
+          return
+        }
+        // Store URIs in reverse order to maintain original selection order
+        for (i in (clipData.itemCount - 1) downTo 0) {
+          indexedUris.add(Pair(i, clipData.getItemAt(i).uri))
         }
       }
-
       data?.data != null -> {
-        pendingUris.add(data.data!!)
+        indexedUris.add(Pair(0, data.data!!))
       }
-
       else -> {
         promise?.reject("ERROR", "No images selected")
         return
       }
     }
 
-    if (pendingUris.isEmpty()) {
+    if (indexedUris.isEmpty()) {
       promise?.reject("ERROR", "No images selected")
       return
     }
 
     CoroutineScope(Dispatchers.Main).launch {
-      processingCount.set(pendingUris.size)
+      try {
+        val resultArray = Arguments.createArray()
+        val processedResults = mutableListOf<Pair<Int, ReadableMap>>()
+        
+        // Process images and maintain their original indices
+        withContext(Dispatchers.IO) {
+          indexedUris.forEach { (originalIndex, uri) ->
+            val compressedUri = compressImage(uri)
+            val imageInfo = Arguments.createMap().apply {
+              putString("uri", compressedUri.toString())
+              val size = getImageSize(compressedUri)
+              putInt("width", size.first)
+              putInt("height", size.second)
+              putDouble("size", getFileSizeInMB(compressedUri))
+              putInt("index", originalIndex)
+            }
+            processedResults.add(Pair(originalIndex, imageInfo))
+          }
+        }
 
-      /* if (options?.getBoolean("cropEnabled") == true) {
-         startCropping(pendingUris.removeAt(0))
-       } else {
-         val resultArray = Arguments.createArray()
-         pendingUris.forEach { uri ->
-           val compressedUri = compressImage(uri)
-           resultArray.pushString(compressedUri.toString())
-         }
-         promise?.resolve(resultArray)
-       }*/
-
-      val resultArray = Arguments.createArray()
-      pendingUris.forEach { uri ->
-        val compressedUri = compressImage(uri)
-        resultArray.pushString(compressedUri.toString())
+        // Sort results in descending order to match original selection
+        processedResults.sortedByDescending { it.first }.forEach { (_, imageInfo) ->
+          resultArray.pushMap(imageInfo)
+        }
+        
+        promise?.resolve(resultArray)
+      } catch (e: Exception) {
+        promise?.reject("ERROR", "Failed to process images: ${e.message}")
       }
-      promise?.resolve(resultArray)
-
     }
   }
 
@@ -335,14 +370,15 @@ class CropImageModule(reactContext: ReactApplicationContext) :
       reactApplicationContext.contentResolver.openInputStream(uri)
     )
 
-    val timeStamp: String = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-    val fileName = "${NAME}_${timeStamp}.jpg"
+    val timeStamp: String = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.getDefault()).format(Date())
+    val randomId = System.nanoTime() // Add a unique identifier
+    val fileName = "${NAME}_${timeStamp}_${randomId}.jpg"
     val file = File(reactApplicationContext.cacheDir, fileName)
     val outputStream = FileOutputStream(file)
 
     val imageQuality = try {
       val imageQualityString = if (this.options?.hasKey("imageQuality") == true) {
-        this.options!!.getString("imageQuality")
+        this.options!!.getInt("imageQuality")
       } else {
         null
       }
@@ -433,7 +469,7 @@ class CropImageModule(reactContext: ReactApplicationContext) :
       val outputStream = FileOutputStream(file)
       val imageQuality = try {
         val imageQualityString = if (this.options?.hasKey("imageQuality") == true) {
-          this.options!!.getString("imageQuality")
+          this.options!!.getInt("imageQuality")
         } else {
           null
         }
@@ -483,13 +519,14 @@ class CropImageModule(reactContext: ReactApplicationContext) :
     const val IMAGE_CAPTURE_REQUEST = 2
 
     private val DEFAULT_CROP_ENABLED = true
-    private val DEFAULT_Multiple_IMAGE = false
     private val DEFAULT_CROP_TYPE = "rectangular"
     private val DEFAULT_FREE_STYLE_CROP_ENABLED = false
     private val DEFAULT_SHOW_CROP_FRAME = false
     private val DEFAULT_SHOW_CROP_GRID = false
     private val DEFAULT_DIMMED_LAYER_COLOR = "#99000000"
-    private val DEFAULT_IMAGE_QUALITY = "60"
+    private val DEFAULT_IMAGE_QUALITY = 60
+    private val DEFAULT_Multiple_IMAGE = false
+    private val DEFAULT_MAX_IMAGES = 50
 
     const val NAME = "CropImage"
   }
@@ -503,9 +540,35 @@ class CropImageModule(reactContext: ReactApplicationContext) :
       putBoolean("showCropFrame", DEFAULT_SHOW_CROP_FRAME)
       putBoolean("showCropGrid", DEFAULT_SHOW_CROP_GRID)
       putString("dimmedLayerColor", DEFAULT_DIMMED_LAYER_COLOR)
-      putString("imageQuality", DEFAULT_IMAGE_QUALITY)
+      putInt("imageQuality", DEFAULT_IMAGE_QUALITY)
       putBoolean("multipleImage", DEFAULT_Multiple_IMAGE)
+      putInt("maxImages", DEFAULT_MAX_IMAGES)
     }
     return defaultMap
+  }
+
+  // Add new helper function to get image dimensions
+  private fun getImageSize(uri: Uri): Pair<Int, Int> {
+    val options = BitmapFactory.Options().apply {
+      inJustDecodeBounds = true
+    }
+    BitmapFactory.decodeStream(
+      reactApplicationContext.contentResolver.openInputStream(uri),
+      null,
+      options
+    )
+    return Pair(options.outWidth, options.outHeight)
+  }
+
+  // Add new helper function to get file size in MB
+  private fun getFileSizeInMB(uri: Uri): Double {
+    try {
+      val file = File(uri.path!!)
+      val bytes = file.length()
+      return String.format("%.2f", bytes.toDouble() / (1024 * 1024)).toDouble()
+    } catch (e: Exception) {
+      Log.e(NAME, "Error getting file size: ${e.message}")
+      return 0.0
+    }
   }
 }
