@@ -15,6 +15,7 @@ import android.graphics.Rect
 import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -55,7 +56,6 @@ class CropImageModule(reactContext: ReactApplicationContext) :
   private var processingCount = AtomicInteger(0)
 
 
-
   init {
     reactContext.addActivityEventListener(object : BaseActivityEventListener() {
       override fun onActivityResult(
@@ -80,14 +80,14 @@ class CropImageModule(reactContext: ReactApplicationContext) :
     val pickIntent = Intent(Intent.ACTION_PICK)
     pickIntent.type = "image/*"
     pickIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, options?.getBoolean("multipleImage") == true)
-    pickIntent.action = Intent.ACTION_GET_CONTENT 
-    
+    pickIntent.action = Intent.ACTION_GET_CONTENT
+
     try {
-        currentActivity?.startActivityForResult(pickIntent, IMAGE_PICKER_REQUEST)
+      currentActivity?.startActivityForResult(pickIntent, IMAGE_PICKER_REQUEST)
     } catch (e: Exception) {
-        promise.reject("ERROR", "Failed to launch image picker: ${e.message}")
+      promise.reject("ERROR", "Failed to launch image picker: ${e.message}")
     }
-}
+  }
 
   private fun checkCameraPermissions(): Boolean {
     if (ContextCompat.checkSelfPermission(reactApplicationContext, Manifest.permission.CAMERA)
@@ -190,7 +190,7 @@ class CropImageModule(reactContext: ReactApplicationContext) :
         defaultOptions.getInt("maxWidth")
       }
     )
-    
+
     mergedOptions.putInt(
       "maxHeight",
       if (options.hasKey("maxHeight")) {
@@ -203,7 +203,7 @@ class CropImageModule(reactContext: ReactApplicationContext) :
         defaultOptions.getInt("maxHeight")
       }
     )
-    
+
     mergedOptions.putDouble(
       "maxFileSize",
       if (options.hasKey("maxFileSize")) {
@@ -270,24 +270,10 @@ class CropImageModule(reactContext: ReactApplicationContext) :
           if (options?.getBoolean("multipleImage") == true) {
             handleMultipleImage(data)
           } else {
-            data?.data?.let { uri ->
-              if (options?.getBoolean("cropEnabled") == true) {
-                startCropping(uri)
-              } else {
-                val compressedUri = compressImage(uri)
-                val result = Arguments.createMap().apply {
-                  putString("uri", compressedUri.toString())
-                  val size = getImageSize(compressedUri)
-                  putInt("width", size.first)
-                  putInt("height", size.second)
-                  putDouble("size", getFileSizeInMB(compressedUri))
-                }
-                promise?.resolve(result)
-              }
-            } ?: promise?.reject("ERROR", "Failed to pick image")
+            handleSingleImage(data?.data)
           }
         } else {
-          promise?.reject("ERROR", "Image picker canceled")
+          sendErrorResponse("Image picker canceled")
         }
       }
 
@@ -296,164 +282,194 @@ class CropImageModule(reactContext: ReactApplicationContext) :
           currentPhotoPath?.let { path ->
             val photoFile = File(path)
             val photoUri = Uri.fromFile(photoFile)
-            // Check if cropping is enabled
-            if (options?.getBoolean("cropEnabled") == true) {
-              startCropping(photoUri)
-            } else {
-              // Create result map with image details
-              val result = Arguments.createMap().apply {
-                putString("uri", photoUri.toString())
-                val size = getImageSize(photoUri)
-                putInt("width", size.first)
-                putInt("height", size.second)
-                putDouble("size", getFileSizeInMB(photoUri))
-              }
-              promise?.resolve(result)
-            }
-          } ?: promise?.reject("ERROR", "Failed to capture image")
+            handleSingleImage(photoUri)
+          } ?: sendErrorResponse("Failed to capture image")
         } else {
-          promise?.reject("ERROR", "Image capture canceled")
+          sendErrorResponse("Image capture canceled")
         }
       }
 
       UCrop.REQUEST_CROP -> {
         if (resultCode == Activity.RESULT_OK) {
           val resultUri = UCrop.getOutput(data!!)
-          resultUri?.let { uri ->
-            val croppedUri = if (options?.getString("cropType") == "circular") {
-              applyCircularMask(uri)
-            } else {
-              uri // Return original URI if cropType is rectangular
-            }
-            promise?.resolve(croppedUri.toString())
-          } ?: promise?.reject("ERROR", "Failed to crop image")
+          handleSingleImage(resultUri)
         } else if (resultCode == UCrop.RESULT_ERROR) {
           val cropError = UCrop.getError(data!!)
-          promise?.reject(
-            "ERROR",
-            cropError?.message ?: "Unknown error during image cropping"
-          )
+          sendErrorResponse(cropError?.message ?: "Unknown error during image cropping")
         } else {
-          promise?.reject("ERROR", "User canceled image cropping")
+          sendErrorResponse("User canceled image cropping")
         }
-      }
-
-      else -> {
-        promise?.reject("ERROR", "Unhandled activity result")
       }
     }
   }
 
-  private fun handleMultipleImage(data: Intent?) {
-    pendingUris.clear()
-    processedUris.clear()
-    processingCount.set(0)
-
-    val maxImages = options?.getInt("maxImages") ?: DEFAULT_MAX_IMAGES
-
-    // Create a list to store URIs with their original indices
-    val indexedUris = mutableListOf<Pair<Int, Uri>>()
-
-    when {
-      data?.clipData != null -> {
-        val clipData = data.clipData!!
-        if (clipData.itemCount > maxImages) {
-          promise?.reject("ERROR", "You can select up to $maxImages images only.")
-          return
-        }
-        // Store URIs in reverse order to maintain original selection order
-        for (i in (clipData.itemCount - 1) downTo 0) {
-          indexedUris.add(Pair(i, clipData.getItemAt(i).uri))
-        }
-      }
-      data?.data != null -> {
-        indexedUris.add(Pair(0, data.data!!))
-      }
-      else -> {
-        promise?.reject("ERROR", "No images selected")
-        return
-      }
-    }
-
-    if (indexedUris.isEmpty()) {
-      promise?.reject("ERROR", "No images selected")
+  private fun handleSingleImage(uri: Uri?) {
+    if (uri == null) {
+      sendErrorResponse("No image selected")
       return
     }
 
     CoroutineScope(Dispatchers.Main).launch {
       try {
-        val resultArray = Arguments.createArray()
-        val processedResults = mutableListOf<Pair<Int, ReadableMap>>()
-        
-        // Process images and maintain their original indices
-        withContext(Dispatchers.IO) {
-          indexedUris.forEach { (originalIndex, uri) ->
-            val compressedUri = compressImage(uri)
-            val imageInfo = Arguments.createMap().apply {
-              putString("uri", compressedUri.toString())
-              val size = getImageSize(compressedUri)
-              putInt("width", size.first)
-              putInt("height", size.second)
-              putDouble("size", getFileSizeInMB(compressedUri))
-              putInt("index", originalIndex)
-            }
-            processedResults.add(Pair(originalIndex, imageInfo))
-          }
+        val compressedUri = compressImage(uri)
+        val result = Arguments.createMap().apply {
+          // Create standard response object
+          putMap("response", createResponseObject(listOf(compressedUri)))
+          // Add metadata
+          putBoolean("multiple", false)
+          putInt("count", 1)
+          putBoolean("hasErrors", false)
         }
-
-        // Sort results in descending order to match original selection
-        processedResults.sortedByDescending { it.first }.forEach { (_, imageInfo) ->
-          resultArray.pushMap(imageInfo)
-        }
-        
-        promise?.resolve(resultArray)
+        promise?.resolve(result)
       } catch (e: Exception) {
-        promise?.reject("ERROR", "Failed to process images: ${e.message}")
+        sendErrorResponse("Failed to process image: ${e.message}")
       }
     }
   }
 
-  private fun compressImage(uri: Uri): Uri {
-    var bitmap = BitmapFactory.decodeStream(
-      reactApplicationContext.contentResolver.openInputStream(uri)
-    )
+  private fun handleMultipleImage(data: Intent?) {
+    val maxImages = options?.getInt("maxImages") ?: DEFAULT_MAX_IMAGES
+    val selectedUris = mutableListOf<Uri>()
 
-    // Get max dimensions from options
-    val maxWidth = options?.getInt("maxWidth") ?: DEFAULT_MAX_WIDTH
-    val maxHeight = options?.getInt("maxHeight") ?: DEFAULT_MAX_HEIGHT
-    val maxFileSize = options?.getDouble("maxFileSize") ?: DEFAULT_MAX_FILE_SIZE
+    when {
+      data?.clipData != null -> {
+        val clipData = data.clipData!!
+        if (clipData.itemCount > maxImages) {
+          sendErrorResponse("You can select up to $maxImages images only")
+          return
+        }
+        for (i in 0 until clipData.itemCount) {
+          selectedUris.add(clipData.getItemAt(i).uri)
+        }
+      }
 
-    // Calculate scaling if needed
-    if (bitmap.width > maxWidth || bitmap.height > maxHeight) {
-      val scaleWidth = maxWidth.toFloat() / bitmap.width
-      val scaleHeight = maxHeight.toFloat() / bitmap.height
-      val scaleFactor = minOf(scaleWidth, scaleHeight)
-      
-      val newWidth = (bitmap.width * scaleFactor).toInt()
-      val newHeight = (bitmap.height * scaleFactor).toInt()
-      
-      bitmap = Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+      data?.data != null -> {
+        selectedUris.add(data.data!!)
+      }
+
+      else -> {
+        sendErrorResponse("No images selected")
+        return
+      }
     }
 
-    val timeStamp: String = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.getDefault()).format(Date())
-    val randomId = System.nanoTime()
-    val fileName = "${NAME}_${timeStamp}_${randomId}.jpg"
-    val file = File(reactApplicationContext.cacheDir, fileName)
-    
-    // Compress with progressive quality reduction if needed
-    var quality = options?.getInt("imageQuality") ?: DEFAULT_IMAGE_QUALITY
-    var fileSize: Double
-    do {
-      val outputStream = FileOutputStream(file)
-      bitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
-      outputStream.close()
-      
-      fileSize = getFileSizeInMB(Uri.fromFile(file))
-      quality -= 10
-    } while (fileSize > maxFileSize && quality > 10)
+    if (selectedUris.isEmpty()) {
+      sendErrorResponse("No images selected")
+      return
+    }
 
-    bitmap.recycle()
-    return Uri.fromFile(file)
+    CoroutineScope(Dispatchers.Main).launch {
+      try {
+        val processedUris = selectedUris.mapNotNull { uri ->
+          try {
+            compressImage(uri)
+          } catch (e: Exception) {
+            Log.e(NAME, "Error processing image: ${e.message}")
+            null
+          }
+        }
+
+        val result = Arguments.createMap().apply {
+          // Create standard response object
+          putMap("response", createResponseObject(processedUris))
+          // Add metadata
+          putBoolean("multiple", true)
+          putInt("count", processedUris.size)
+          putBoolean("hasErrors", processedUris.size < selectedUris.size)
+        }
+        promise?.resolve(result)
+      } catch (e: Exception) {
+        sendErrorResponse("Failed to process images: ${e.message}")
+      }
+    }
+  }
+
+  private fun createResponseObject(uris: List<Uri>): ReadableMap {
+    val response = Arguments.createMap()
+    val images = Arguments.createArray()
+
+    uris.forEachIndexed { index, uri ->
+      val imageInfo = Arguments.createMap().apply {
+        putString("uri", uri.toString())
+        val size = getImageSize(uri)
+        putInt("width", size.first)
+        putInt("height", size.second)
+        putDouble("size", getFileSizeInMB(uri))
+        putInt("index", index)
+        putString("type", getMimeType(uri))
+        putString("fileName", getFileName(uri))
+        putDouble("timestamp", System.currentTimeMillis().toDouble())
+      }
+      images.pushMap(imageInfo)
+    }
+
+    response.putArray("images", images)
+    return response
+  }
+
+  private fun sendErrorResponse(message: String) {
+    val errorResponse = Arguments.createMap().apply {
+      putMap("response", Arguments.createMap().apply {
+        putArray("images", Arguments.createArray())
+      })
+      putBoolean("multiple", options?.getBoolean("multipleImage") == true)
+      putInt("count", 0)
+      putBoolean("hasErrors", true)
+      putString("errorMessage", message)
+    }
+    promise?.resolve(errorResponse)
+  }
+
+  private fun compressImage(uri: Uri): Uri {
+    try {
+      var bitmap = BitmapFactory.decodeStream(
+        reactApplicationContext.contentResolver.openInputStream(uri)
+      ) ?: throw IOException("Failed to decode image")
+
+      // Get max dimensions from options
+      val maxWidth = options?.getInt("maxWidth") ?: DEFAULT_MAX_WIDTH
+      val maxHeight = options?.getInt("maxHeight") ?: DEFAULT_MAX_HEIGHT
+      val maxFileSize = options?.getDouble("maxFileSize") ?: DEFAULT_MAX_FILE_SIZE
+
+      // Scale if needed
+      if (bitmap.width > maxWidth || bitmap.height > maxHeight) {
+        val scaleWidth = maxWidth.toFloat() / bitmap.width
+        val scaleHeight = maxHeight.toFloat() / bitmap.height
+        val scaleFactor = minOf(scaleWidth, scaleHeight)
+
+        val newWidth = (bitmap.width * scaleFactor).toInt()
+        val newHeight = (bitmap.height * scaleFactor).toInt()
+
+        val scaledBitmap = Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+        bitmap.recycle()
+        bitmap = scaledBitmap
+      }
+
+      val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.getDefault()).format(Date())
+      val fileName = "${NAME}_${timeStamp}_${System.nanoTime()}.jpg"
+      val file = File(reactApplicationContext.cacheDir, fileName)
+
+      var quality = options?.getInt("imageQuality") ?: DEFAULT_IMAGE_QUALITY
+      var fileSize: Double
+      var attempts = 0
+      val maxAttempts = 5
+
+      do {
+        FileOutputStream(file).use { outputStream ->
+          bitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
+          outputStream.flush()
+        }
+
+        fileSize = file.length().toDouble() / (1024 * 1024) // Convert to MB
+        quality = (quality * 0.8).toInt().coerceAtLeast(10)
+        attempts++
+      } while (fileSize > maxFileSize && attempts < maxAttempts && quality > 10)
+
+      bitmap.recycle()
+      return Uri.fromFile(file)
+    } catch (e: Exception) {
+      throw IOException("Failed to compress image: ${e.message}")
+    }
   }
 
   private fun startCropping(sourceUri: Uri) {
@@ -577,7 +593,6 @@ class CropImageModule(reactContext: ReactApplicationContext) :
   }
 
 
-
   companion object {
     const val IMAGE_PICKER_REQUEST = 1
     const val IMAGE_CAPTURE_REQUEST = 2
@@ -591,12 +606,13 @@ class CropImageModule(reactContext: ReactApplicationContext) :
     private val DEFAULT_IMAGE_QUALITY = 60
     private val DEFAULT_Multiple_IMAGE = false
     private val DEFAULT_MAX_IMAGES = 50
-    private val DEFAULT_MAX_WIDTH = 1280
+    private val DEFAULT_MAX_WIDTH = 1920
     private val DEFAULT_MAX_HEIGHT = 1280
     private val DEFAULT_MAX_FILE_SIZE = 10.0 // in MB
 
     const val NAME = "CropImage"
   }
+
 
   // Add getDefaultOptions function
   private fun getDefaultOptions(): ReadableMap {
@@ -632,13 +648,36 @@ class CropImageModule(reactContext: ReactApplicationContext) :
 
   // Add new helper function to get file size in MB
   private fun getFileSizeInMB(uri: Uri): Double {
-    try {
+    return try {
       val file = File(uri.path!!)
-      val bytes = file.length()
-      return String.format("%.2f", bytes.toDouble() / (1024 * 1024)).toDouble()
+      if (file.exists()) {
+        file.length().toDouble() / (1024 * 1024) // Convert bytes to MB
+      } else {
+        val inputStream = reactApplicationContext.contentResolver.openInputStream(uri)
+        val bytes = inputStream?.available()?.toLong() ?: 0L
+        inputStream?.close()
+        bytes.toDouble() / (1024 * 1024) // Convert bytes to MB
+      }
     } catch (e: Exception) {
       Log.e(NAME, "Error getting file size: ${e.message}")
-      return 0.0
+      0.0
+    }
+  }
+
+  // Helper function to get MIME type
+  private fun getMimeType(uri: Uri): String {
+    return reactApplicationContext.contentResolver.getType(uri) ?: "image/jpeg"
+  }
+
+  // Helper function to get file name
+  private fun getFileName(uri: Uri): String {
+    val cursor = reactApplicationContext.contentResolver.query(uri, null, null, null, null)
+    return cursor?.use {
+      val nameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+      it.moveToFirst()
+      it.getString(nameIndex)
+    } ?: run {
+      uri.lastPathSegment ?: "unknown"
     }
   }
 }
