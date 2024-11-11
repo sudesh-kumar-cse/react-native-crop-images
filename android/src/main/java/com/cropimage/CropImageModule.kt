@@ -260,8 +260,15 @@ class CropImageModule(reactContext: ReactApplicationContext) :
             if (options?.getBoolean("cropEnabled") == true) {
               startCropping(photoUri)
             } else {
-              // Return the original uri if cropping is disabled
-              promise?.resolve(photoUri.toString())
+              // Create result map with image details
+              val result = Arguments.createMap().apply {
+                putString("uri", photoUri.toString())
+                val size = getImageSize(photoUri)
+                putInt("width", size.first)
+                putInt("height", size.second)
+                putDouble("size", getFileSizeInMB(photoUri))
+              }
+              promise?.resolve(result)
             }
           } ?: promise?.reject("ERROR", "Failed to capture image")
         } else {
@@ -514,6 +521,8 @@ class CropImageModule(reactContext: ReactApplicationContext) :
 
     return output
   }
+
+
 
   companion object {
     const val IMAGE_PICKER_REQUEST = 1
