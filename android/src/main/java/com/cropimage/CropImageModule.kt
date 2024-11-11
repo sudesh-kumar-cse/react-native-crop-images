@@ -55,6 +55,7 @@ class CropImageModule(reactContext: ReactApplicationContext) :
   private var processingCount = AtomicInteger(0)
 
 
+
   init {
     reactContext.addActivityEventListener(object : BaseActivityEventListener() {
       override fun onActivityResult(
@@ -174,6 +175,45 @@ class CropImageModule(reactContext: ReactApplicationContext) :
         }
       } else {
         defaultOptions.getInt("maxImages") // Fallback if key does not exist
+      }
+    )
+
+    mergedOptions.putInt(
+      "maxWidth",
+      if (options.hasKey("maxWidth")) {
+        try {
+          options.getDouble("maxWidth").toInt()
+        } catch (e: Exception) {
+          defaultOptions.getInt("maxWidth")
+        }
+      } else {
+        defaultOptions.getInt("maxWidth")
+      }
+    )
+    
+    mergedOptions.putInt(
+      "maxHeight",
+      if (options.hasKey("maxHeight")) {
+        try {
+          options.getDouble("maxHeight").toInt()
+        } catch (e: Exception) {
+          defaultOptions.getInt("maxHeight")
+        }
+      } else {
+        defaultOptions.getInt("maxHeight")
+      }
+    )
+    
+    mergedOptions.putDouble(
+      "maxFileSize",
+      if (options.hasKey("maxFileSize")) {
+        try {
+          options.getDouble("maxFileSize")
+        } catch (e: Exception) {
+          defaultOptions.getDouble("maxFileSize")
+        }
+      } else {
+        defaultOptions.getDouble("maxFileSize")
       }
     )
 
@@ -374,31 +414,45 @@ class CropImageModule(reactContext: ReactApplicationContext) :
   }
 
   private fun compressImage(uri: Uri): Uri {
-    val bitmap = BitmapFactory.decodeStream(
+    var bitmap = BitmapFactory.decodeStream(
       reactApplicationContext.contentResolver.openInputStream(uri)
     )
 
-    val timeStamp: String = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.getDefault()).format(Date())
-    val randomId = System.nanoTime() // Add a unique identifier
-    val fileName = "${NAME}_${timeStamp}_${randomId}.jpg"
-    val file = File(reactApplicationContext.cacheDir, fileName)
-    val outputStream = FileOutputStream(file)
+    // Get max dimensions from options
+    val maxWidth = options?.getInt("maxWidth") ?: DEFAULT_MAX_WIDTH
+    val maxHeight = options?.getInt("maxHeight") ?: DEFAULT_MAX_HEIGHT
+    val maxFileSize = options?.getDouble("maxFileSize") ?: DEFAULT_MAX_FILE_SIZE
 
-    val imageQuality = try {
-      val imageQualityString = if (this.options?.hasKey("imageQuality") == true) {
-        this.options!!.getInt("imageQuality")
-      } else {
-        null
-      }
-      imageQualityString?.toInt()?.coerceIn(60, 100) ?: 60
-    } catch (e: NumberFormatException) {
-      60 // Default value in case of format exception
+    // Calculate scaling if needed
+    if (bitmap.width > maxWidth || bitmap.height > maxHeight) {
+      val scaleWidth = maxWidth.toFloat() / bitmap.width
+      val scaleHeight = maxHeight.toFloat() / bitmap.height
+      val scaleFactor = minOf(scaleWidth, scaleHeight)
+      
+      val newWidth = (bitmap.width * scaleFactor).toInt()
+      val newHeight = (bitmap.height * scaleFactor).toInt()
+      
+      bitmap = Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
     }
 
-    bitmap.compress(Bitmap.CompressFormat.JPEG, imageQuality, outputStream)
-    outputStream.close()
-    bitmap.recycle()
+    val timeStamp: String = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.getDefault()).format(Date())
+    val randomId = System.nanoTime()
+    val fileName = "${NAME}_${timeStamp}_${randomId}.jpg"
+    val file = File(reactApplicationContext.cacheDir, fileName)
+    
+    // Compress with progressive quality reduction if needed
+    var quality = options?.getInt("imageQuality") ?: DEFAULT_IMAGE_QUALITY
+    var fileSize: Double
+    do {
+      val outputStream = FileOutputStream(file)
+      bitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
+      outputStream.close()
+      
+      fileSize = getFileSizeInMB(Uri.fromFile(file))
+      quality -= 10
+    } while (fileSize > maxFileSize && quality > 10)
 
+    bitmap.recycle()
     return Uri.fromFile(file)
   }
 
@@ -537,6 +591,9 @@ class CropImageModule(reactContext: ReactApplicationContext) :
     private val DEFAULT_IMAGE_QUALITY = 60
     private val DEFAULT_Multiple_IMAGE = false
     private val DEFAULT_MAX_IMAGES = 50
+    private val DEFAULT_MAX_WIDTH = 1280
+    private val DEFAULT_MAX_HEIGHT = 1280
+    private val DEFAULT_MAX_FILE_SIZE = 10.0 // in MB
 
     const val NAME = "CropImage"
   }
@@ -553,6 +610,9 @@ class CropImageModule(reactContext: ReactApplicationContext) :
       putInt("imageQuality", DEFAULT_IMAGE_QUALITY)
       putBoolean("multipleImage", DEFAULT_Multiple_IMAGE)
       putInt("maxImages", DEFAULT_MAX_IMAGES)
+      putInt("maxWidth", DEFAULT_MAX_WIDTH)
+      putInt("maxHeight", DEFAULT_MAX_HEIGHT)
+      putDouble("maxFileSize", DEFAULT_MAX_FILE_SIZE)
     }
     return defaultMap
   }
