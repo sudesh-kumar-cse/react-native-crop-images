@@ -1,6 +1,6 @@
 {
   "name": "react-native-crop-images",
-  "version": "0.0.14.alpha.6",
+  "version": "0.0.15",
   "description": "Image Cropping Library for Android and iOS",
   "main": "index.js",
   "scripts": {
