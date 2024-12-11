@@ -270,7 +270,12 @@ class CropImageModule(reactContext: ReactApplicationContext) :
           if (options?.getBoolean("multipleImage") == true) {
             handleMultipleImage(data)
           } else {
-            handleSingleImage(data?.data)
+            // Check if cropping is enabled
+            if (options?.getBoolean("cropEnabled") == true) {
+              data?.data?.let { startCropping(it) }
+            } else {
+              handleSingleImage(data?.data)
+            }
           }
         } else {
           sendErrorResponse("Image picker canceled")
@@ -282,7 +287,12 @@ class CropImageModule(reactContext: ReactApplicationContext) :
           currentPhotoPath?.let { path ->
             val photoFile = File(path)
             val photoUri = Uri.fromFile(photoFile)
-            handleSingleImage(photoUri)
+            // Check if cropping is enabled
+            if (options?.getBoolean("cropEnabled") == true) {
+              startCropping(photoUri)
+            } else {
+              handleSingleImage(photoUri)
+            }
           } ?: sendErrorResponse("Failed to capture image")
         } else {
           sendErrorResponse("Image capture canceled")
@@ -292,7 +302,14 @@ class CropImageModule(reactContext: ReactApplicationContext) :
       UCrop.REQUEST_CROP -> {
         if (resultCode == Activity.RESULT_OK) {
           val resultUri = UCrop.getOutput(data!!)
-          handleSingleImage(resultUri)
+          // Apply circular mask if needed before final processing
+          val finalUri = if (options?.getString("cropType") == "circular") {
+              applyCircularMask(resultUri!!)
+          } else {
+              resultUri
+          }
+          // After cropping and masking, process the image
+          handleSingleImage(finalUri)
         } else if (resultCode == UCrop.RESULT_ERROR) {
           val cropError = UCrop.getError(data!!)
           sendErrorResponse(cropError?.message ?: "Unknown error during image cropping")
@@ -473,123 +490,96 @@ class CropImageModule(reactContext: ReactApplicationContext) :
   }
 
   private fun startCropping(sourceUri: Uri) {
-    CoroutineScope(Dispatchers.IO).launch {
-      try {
-        val destinationUri = Uri.fromFile(File(reactApplicationContext.cacheDir, "cropped"))
-        // Potentially add steps here to optimize the image before cropping
-        withContext(Dispatchers.Main) {
-          // Ensure UCrop activity is started on the main thread
-          UCrop.of(sourceUri, destinationUri)
-            .withAspectRatio(1f, 1f)
+    try {
+        val destinationUri = Uri.fromFile(File(reactApplicationContext.cacheDir, "cropped_${System.currentTimeMillis()}.jpg"))
+        val uCrop = UCrop.of(sourceUri, destinationUri)
             .withOptions(getUCropOptions())
-            .start(currentActivity!!)
+
+        // If cropType is circular, force 1:1 aspect ratio
+        if (options?.getString("cropType") == "circular") {
+            uCrop.withAspectRatio(1f, 1f)
         }
-      } catch (e: Exception) {
-        // Handle any exceptions, potentially logging or notifying the user
-        promise?.reject("ERROR", "Exception during image cropping: ${e.message}")
-      }
+
+        currentActivity?.let { activity ->
+            uCrop.start(activity)
+        } ?: throw Exception("Activity is null")
+    } catch (e: Exception) {
+        promise?.reject("ERROR", "Failed to start cropping: ${e.message}")
     }
   }
 
   private fun getUCropOptions(): UCrop.Options {
-    val options = UCrop.Options()
-    // Check for cropType key
-    if (this.options?.hasKey("cropType") == true) {
-      options.setCircleDimmedLayer(this.options?.getString("cropType") == "circular")
-    } else {
-      options.setCircleDimmedLayer(false) // Default value
+    return UCrop.Options().apply {
+        // Set circular overlay if cropType is circular
+        setCircleDimmedLayer(options?.getString("cropType") == "circular")
+        
+        // Other options
+        setFreeStyleCropEnabled(options?.getBoolean("freeStyleCropEnabled") ?: false)
+        setShowCropFrame(options?.getBoolean("showCropFrame") ?: true)
+        setShowCropGrid(options?.getBoolean("showCropGrid") ?: true)
+        
+        // Set background color
+        val dimmedColor = try {
+            Color.parseColor(options?.getString("dimmedLayerColor") ?: "#99000000")
+        } catch (e: Exception) {
+            Color.parseColor("#99000000")
+        }
+        setDimmedLayerColor(dimmedColor)
+        
+        // Set higher quality
+        setCompressionQuality(100)
     }
-
-    // Check for freeStyleCropEnabled key
-    if (this.options?.hasKey("freeStyleCropEnabled") == true) {
-      options.setFreeStyleCropEnabled(
-        this.options?.getBoolean("freeStyleCropEnabled") ?: false
-      )
-    } else {
-      options.setFreeStyleCropEnabled(true) // Default value
-    }
-
-    // Check for showCropFrame key
-    if (this.options?.hasKey("showCropFrame") == true) {
-      options.setShowCropFrame(this.options?.getBoolean("showCropFrame") ?: false)
-    } else {
-      options.setShowCropFrame(true) // Default value
-    }
-
-    // Check for showCropGrid key
-    if (this.options?.hasKey("showCropGrid") == true) {
-      options.setShowCropGrid(this.options?.getBoolean("showCropGrid") ?: false)
-    } else {
-      options.setShowCropGrid(true) // Default value
-    }
-
-    // Check for dimmedLayerColor key
-    val dimmedLayerColor = if (this.options?.hasKey("dimmedLayerColor") == true) {
-      val colorString = this.options?.getString("dimmedLayerColor")
-      Color.parseColor(colorString)
-    } else {
-      Color.parseColor("#99000000") // Default color
-    }
-    options.setDimmedLayerColor(dimmedLayerColor)
-    return options
   }
 
   private fun applyCircularMask(uri: Uri): Uri {
-    if (options?.getString("cropType") == "circular") {
-      val bitmap = BitmapFactory.decodeStream(
-        reactApplicationContext.contentResolver.openInputStream(uri)
-      )
-      val circularBitmap = getCircularBitmap(bitmap)
-      val timeStamp: String =
-        SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-      val fileName = "${NAME}_${timeStamp}.png"
-      val file = File(reactApplicationContext.cacheDir, fileName)
-      val outputStream = FileOutputStream(file)
-      val imageQuality = try {
-        val imageQualityString = if (this.options?.hasKey("imageQuality") == true) {
-          this.options!!.getInt("imageQuality")
-        } else {
-          null
+    try {
+        val inputBitmap = BitmapFactory.decodeStream(
+            reactApplicationContext.contentResolver.openInputStream(uri)
+        ) ?: throw IOException("Failed to decode image")
+
+        val width = inputBitmap.width
+        val height = inputBitmap.height
+        val size = width.coerceAtMost(height)
+        
+        // Create a square bitmap with transparent background
+        val outputBitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        outputBitmap.eraseColor(Color.TRANSPARENT) // Ensure transparent background
+        
+        val canvas = Canvas(outputBitmap)
+        
+        // Create path for circular mask
+        val path = android.graphics.Path().apply {
+            addCircle(size / 2f, size / 2f, size / 2f, android.graphics.Path.Direction.CW)
         }
-        imageQualityString?.toInt()?.coerceIn(60, 100) ?: 60
-      } catch (e: NumberFormatException) {
-        60 // Default value in case of format exception
-      }
+        
+        // Apply clipping path
+        canvas.clipPath(path)
+        
+        // Calculate positioning to center the image
+        val left = (size - width) / 2f
+        val top = (size - height) / 2f
+        
+        // Draw the original bitmap
+        canvas.drawBitmap(inputBitmap, left, top, null)
 
-      circularBitmap.compress(Bitmap.CompressFormat.PNG, imageQuality, outputStream)
-      outputStream.close()
-      return Uri.fromFile(file)
-    } else {
-      return uri // Return original URI if cropType is rectangular
+        // Create output file
+        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        val outputFile = File(reactApplicationContext.cacheDir, "circular_${timeStamp}.png")
+        
+        // Save as PNG to preserve transparency
+        FileOutputStream(outputFile).use { out ->
+            outputBitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        }
+
+        // Clean up
+        inputBitmap.recycle()
+        outputBitmap.recycle()
+
+        return Uri.fromFile(outputFile)
+    } catch (e: Exception) {
+        Log.e(NAME, "Error applying circular mask: ${e.message}")
+        throw e
     }
-  }
-
-  private fun getCircularBitmap(bitmap: Bitmap): Bitmap {
-    val width = bitmap.width
-    val height = bitmap.height
-    val minEdge = Math.min(width, height)
-    val dx = (width - minEdge) / 2
-    val dy = (height - minEdge) / 2
-
-    val dstBitmap = Bitmap.createBitmap(bitmap, dx, dy, minEdge, minEdge)
-
-    val output = Bitmap.createBitmap(dstBitmap.width, dstBitmap.height, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(output)
-
-    val paint = Paint()
-    val rect = Rect(0, 0, dstBitmap.width, dstBitmap.height)
-
-    paint.isAntiAlias = true
-    paint.isFilterBitmap = true
-    paint.isDither = true
-    canvas.drawARGB(0, 0, 0, 0)
-    canvas.drawCircle(dstBitmap.width / 2f, dstBitmap.height / 2f, dstBitmap.width / 2f, paint)
-    paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
-    canvas.drawBitmap(dstBitmap, rect, rect, paint)
-
-    dstBitmap.recycle()
-
-    return output
   }
 
 
