@@ -14,6 +14,7 @@
 @property (nonatomic, assign) BOOL showCropGrid;
 @property (nonatomic, strong) UIColor *dimmedLayerColor;
 @property (nonatomic, strong) NSString *cropType;
+@property (nonatomic, assign) BOOL cropEnabled;
 
 @end
 

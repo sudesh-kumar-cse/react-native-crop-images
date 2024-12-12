@@ -37,6 +37,7 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
   NSLog(@"configure: Setting crop options with provided parameters.");
   self.options = options;
   self.cropType = options[@"cropType"];
+  self.cropEnabled = [options[@"cropEnabled"] boolValue];
   self.freeStyleCropEnabled = [options[@"freeStyleCropEnabled"] boolValue];
   self.showCropFrame = [options[@"showCropFrame"] boolValue];
   self.showCropGrid = [options[@"showCropGrid"] boolValue];
@@ -66,6 +67,31 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
   UIImage *selectedImage = info[UIImagePickerControllerOriginalImage];
 
   [picker dismissViewControllerAnimated:YES completion:^{
+    // Check if cropping is enabled
+    if (!self.cropEnabled) {
+      NSLog(@"Cropping disabled, processing original image.");
+      if ([self.cropType isEqualToString:@"circular"]) {
+        // Create circular image even when cropping is disabled
+        CGRect squareRect = CGRectMake(0, 0, selectedImage.size.width, selectedImage.size.width);
+        UIImage *circularImage = [self createCircularImageWithImage:selectedImage inRect:squareRect];
+        NSString *imagePath = [self saveImage:circularImage];
+        if (imagePath) {
+          self.resolve(imagePath);
+        } else {
+          self.reject(@"ERROR", @"Failed to save circular image", nil);
+        }
+      } else {
+        NSString *imagePath = [self saveImage:selectedImage];
+        if (imagePath) {
+          self.resolve(imagePath);
+        } else {
+          self.reject(@"ERROR", @"Failed to save original image", nil);
+        }
+      }
+      return;
+    }
+    
+    // If cropping is enabled, proceed with normal flow
     [self presentCropViewControllerWithImage:selectedImage];
   }];
 }
@@ -147,16 +173,34 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
 }
 
 - (NSString *)saveImage:(UIImage *)image {
-  NSLog(@"saveImage: Saving cropped image to file system.");
+  NSLog(@"saveImage: Saving image to file system.");
+  
+  // Try PNG first for better quality and transparency support
   NSData *imageData = UIImagePNGRepresentation(image);
+  
+  // If PNG fails, try JPEG as fallback
+  if (!imageData) {
+    NSLog(@"Warning: PNG conversion failed, trying JPEG...");
+    imageData = UIImageJPEGRepresentation(image, 0.9);
+  }
+  
+  if (!imageData) {
+    NSLog(@"Error: Failed to convert image to either PNG or JPEG format.");
+    return nil;
+  }
+  
   NSString *documentsPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
-  NSString *filePath = [documentsPath stringByAppendingPathComponent:[NSString stringWithFormat:@"cropped_%@.png", [[NSUUID UUID] UUIDString]]];
+  NSString *fileName = [NSString stringWithFormat:@"cropped_%@.png", [[NSUUID UUID] UUIDString]];
+  NSString *filePath = [documentsPath stringByAppendingPathComponent:fileName];
 
-  if ([imageData writeToFile:filePath atomically:YES]) {
+  NSError *error = nil;
+  BOOL success = [imageData writeToFile:filePath options:NSDataWritingAtomic error:&error];
+  
+  if (success) {
     NSLog(@"Image saved successfully at path: %@", filePath);
     return filePath;
   } else {
-    NSLog(@"Error: Failed to save image.");
+    NSLog(@"Error: Failed to save image. Error: %@", error.localizedDescription);
     return nil;
   }
 }
@@ -181,6 +225,21 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
                            green:((rgbValue & 0x00FF00) >> 8) / 255.0
                             blue:(rgbValue & 0x0000FF) / 255.0
                            alpha:1.0];
+}
+
+- (UIImage *)createCircularImageWithImage:(UIImage *)image inRect:(CGRect)rect {
+  NSLog(@"createCircularImageWithImage: Creating circular image without cropping.");
+  UIGraphicsBeginImageContextWithOptions(rect.size, NO, image.scale);
+  
+  UIBezierPath *circularPath = [UIBezierPath bezierPathWithOvalInRect:rect];
+  [circularPath addClip];
+  
+  [image drawInRect:rect];
+  
+  UIImage *circularImage = UIGraphicsGetImageFromCurrentImageContext();
+  UIGraphicsEndImageContext();
+  
+  return [self imageByMakingBackgroundTransparent:circularImage];
 }
 
 @end
