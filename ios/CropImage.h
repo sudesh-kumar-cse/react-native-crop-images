@@ -2,8 +2,9 @@
 #import <React/RCTUtils.h>
 #import <UIKit/UIKit.h>
 #import "TOCropViewController.h"
+#import <PhotosUI/PhotosUI.h>
 
-@interface CropImage : NSObject <RCTBridgeModule, UIImagePickerControllerDelegate, UINavigationControllerDelegate, TOCropViewControllerDelegate>
+@interface CropImage : NSObject <RCTBridgeModule, UIImagePickerControllerDelegate, UINavigationControllerDelegate, TOCropViewControllerDelegate, PHPickerViewControllerDelegate>
 
 @property (nonatomic, strong) UIImagePickerController *imagePickerController;
 @property (nonatomic, copy) RCTPromiseResolveBlock resolve;
@@ -15,6 +16,10 @@
 @property (nonatomic, strong) UIColor *dimmedLayerColor;
 @property (nonatomic, strong) NSString *cropType;
 @property (nonatomic, assign) BOOL cropEnabled;
+@property (nonatomic, assign) BOOL multipleImage;
+
+- (void)presentViewController:(UIViewController *)viewController;
+- (void)presentImagePickerController;
 
 @end
 

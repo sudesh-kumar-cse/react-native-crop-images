@@ -1,4 +1,5 @@
 #import "CropImage.h"
+#import <PhotosUI/PhotosUI.h>
 
 @implementation CropImage
 
@@ -9,16 +10,40 @@ RCT_EXPORT_MODULE();
   return dispatch_get_main_queue();
 }
 
+- (void)presentViewController:(UIViewController *)viewController {
+  UIViewController *rootViewController = [UIApplication sharedApplication].delegate.window.rootViewController;
+  if (rootViewController.presentedViewController) {
+    [rootViewController.presentedViewController dismissViewControllerAnimated:NO completion:^{
+      [rootViewController presentViewController:viewController animated:YES completion:nil];
+    }];
+  } else {
+    [rootViewController presentViewController:viewController animated:YES completion:nil];
+  }
+}
+
 RCT_EXPORT_METHOD(pickImage:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
   NSLog(@"pickImage: Initiating image pick.");
   self.resolve = resolve;
   self.reject = reject;
 
-  self.imagePickerController = [[UIImagePickerController alloc] init];
-  self.imagePickerController.delegate = self;
-  self.imagePickerController.sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
-
-  [self presentImagePickerController];
+  if ([self.options[@"multipleImage"] boolValue]) {
+    // Use PHPickerViewController for multiple selection
+    PHPickerConfiguration *config = [[PHPickerConfiguration alloc] init];
+    config.selectionLimit = 0; // 0 means no limit
+    config.filter = [PHPickerFilter imagesFilter];
+    
+    PHPickerViewController *pickerViewController = [[PHPickerViewController alloc] initWithConfiguration:config];
+    pickerViewController.delegate = self;
+    
+    [self presentViewController:pickerViewController];
+  } else {
+    // Use existing UIImagePickerController for single selection
+    self.imagePickerController = [[UIImagePickerController alloc] init];
+    self.imagePickerController.delegate = self;
+    self.imagePickerController.sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
+    
+    [self presentImagePickerController];
+  }
 }
 
 RCT_EXPORT_METHOD(captureImage:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
@@ -34,7 +59,7 @@ RCT_EXPORT_METHOD(captureImage:(RCTPromiseResolveBlock)resolve rejecter:(RCTProm
 }
 
 RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
-  NSLog(@"configure: Setting crop options with provided parameters.");
+  NSLog(@"configure: Setting options with provided parameters.");
   self.options = options;
   self.cropType = options[@"cropType"];
   self.cropEnabled = [options[@"cropEnabled"] boolValue];
@@ -63,9 +88,31 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
 }
 
 - (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary<NSString *,id> *)info {
-  NSLog(@"imagePickerController: Image picked, processing crop presentation.");
+  NSLog(@"imagePickerController: Image picked, processing.");
+  
+  if ([self.options[@"multipleImage"] boolValue]) {
+    NSArray *mediaInfoArray = info[UIImagePickerControllerMediaURL];
+    NSMutableArray *imagePaths = [NSMutableArray array];
+    
+    for (NSDictionary *mediaInfo in mediaInfoArray) {
+      UIImage *selectedImage = mediaInfo[UIImagePickerControllerOriginalImage];
+      NSString *imagePath = [self saveImage:selectedImage];
+      if (imagePath) {
+        [imagePaths addObject:imagePath];
+      }
+    }
+    
+    if (imagePaths.count > 0) {
+      self.resolve(imagePaths);
+    } else {
+      self.reject(@"ERROR", @"Failed to save images", nil);
+    }
+    
+    [picker dismissViewControllerAnimated:YES completion:nil];
+    return;
+  }
+  
   UIImage *selectedImage = info[UIImagePickerControllerOriginalImage];
-
   [picker dismissViewControllerAnimated:YES completion:^{
     // Check if cropping is enabled
     if (!self.cropEnabled) {
@@ -240,6 +287,40 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
   UIGraphicsEndImageContext();
   
   return [self imageByMakingBackgroundTransparent:circularImage];
+}
+
+- (void)picker:(PHPickerViewController *)picker didFinishPicking:(NSArray<PHPickerResult *> *)results {
+  [picker dismissViewControllerAnimated:YES completion:nil];
+  
+  if (results.count == 0) {
+    self.reject(@"ERROR", @"No images selected", nil);
+    return;
+  }
+  
+  NSMutableArray *imagePaths = [NSMutableArray array];
+  dispatch_group_t group = dispatch_group_create();
+  
+  for (PHPickerResult *result in results) {
+    dispatch_group_enter(group);
+    [result.itemProvider loadObjectOfClass:[UIImage class] completionHandler:^(__kindof id<NSItemProviderReading>  _Nullable object, NSError * _Nullable error) {
+      if ([object isKindOfClass:[UIImage class]]) {
+        UIImage *image = (UIImage *)object;
+        NSString *imagePath = [self saveImage:image];
+        if (imagePath) {
+          [imagePaths addObject:imagePath];
+        }
+      }
+      dispatch_group_leave(group);
+    }];
+  }
+  
+  dispatch_group_notify(group, dispatch_get_main_queue(), ^{
+    if (imagePaths.count > 0) {
+      self.resolve(imagePaths);
+    } else {
+      self.reject(@"ERROR", @"Failed to save images", nil);
+    }
+  });
 }
 
 @end
