@@ -103,6 +103,7 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
     }
     
     if (imagePaths.count > 0) {
+      NSLog(@"imagePickerController: Image paths: %@", imagePaths);
       self.resolve(imagePaths);
     } else {
       self.reject(@"ERROR", @"Failed to save images", nil);
@@ -123,6 +124,7 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
         UIImage *circularImage = [self createCircularImageWithImage:selectedImage inRect:squareRect];
         NSString *imagePath = [self saveImage:circularImage];
         if (imagePath) {
+          NSLog(@"pickImage: Selected image path: %@", imagePath);
           self.resolve(imagePath);
         } else {
           self.reject(@"ERROR", @"Failed to save circular image", nil);
@@ -130,6 +132,7 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
       } else {
         NSString *imagePath = [self saveImage:selectedImage];
         if (imagePath) {
+          NSLog(@"pickImage: Selected image path: %@", imagePath);
           self.resolve(imagePath);
         } else {
           self.reject(@"ERROR", @"Failed to save original image", nil);
