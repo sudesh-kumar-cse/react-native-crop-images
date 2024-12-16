@@ -186,12 +186,16 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
 }
 
 - (void)cropViewController:(TOCropViewController *)cropViewController didCropToImage:(UIImage *)image withRect:(CGRect)cropRect angle:(NSInteger)angle {
-  NSLog(@"cropViewController: Image cropped.");
+  NSLog(@"cropViewController: Rectangle image cropped.");
   [cropViewController dismissViewControllerAnimated:YES completion:^{
-    NSString *croppedImagePath = [self saveImage:image];
+    // Save the cropped rectangle image
+    NSString *croppedImagePath = [self saveImage:image]; 
     if (croppedImagePath) {
-      self.resolve(croppedImagePath);
+      NSLog(@"Cropped rectangle image saved at path: %@", croppedImagePath);
+      // Send the response in a consistent format
+      [self sendImageResponse:croppedImagePath]; // Use the same response method
     } else {
+      NSLog(@"Error: Failed to save cropped rectangle image.");
       self.reject(@"ERROR", @"Failed to save cropped image", nil);
     }
   }];
@@ -203,7 +207,7 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
     UIImage *transparentImage = [self imageByMakingBackgroundTransparent:image];
     NSString *croppedImagePath = [self saveImage:transparentImage];
     if (croppedImagePath) {
-      self.resolve(croppedImagePath);
+      [self sendImageResponse:croppedImagePath];
     } else {
       self.reject(@"ERROR", @"Failed to save cropped image", nil);
     }
@@ -225,13 +229,13 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
 - (NSString *)saveImage:(UIImage *)image {
   NSLog(@"saveImage: Saving image to file system.");
   
-  // Try PNG first for better quality and transparency support
+  // Convert image to PNG format
   NSData *imageData = UIImagePNGRepresentation(image);
   
-  // If PNG fails, try JPEG as fallback
+  // If PNG conversion fails, try JPEG as fallback
   if (!imageData) {
     NSLog(@"Warning: PNG conversion failed, trying JPEG...");
-    imageData = UIImageJPEGRepresentation(image, 0.9);
+    imageData = UIImageJPEGRepresentation(image, 0.8); // Adjust quality as needed
   }
   
   if (!imageData) {
@@ -240,7 +244,7 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
   }
   
   NSString *documentsPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
-  NSString *fileName = [NSString stringWithFormat:@"cropped_%@.png", [[NSUUID UUID] UUIDString]];
+  NSString *fileName = [NSString stringWithFormat:@"image_%@.png", [[NSUUID UUID] UUIDString]];
   NSString *filePath = [documentsPath stringByAppendingPathComponent:fileName];
 
   NSError *error = nil;
@@ -365,6 +369,9 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
 - (void)sendImageResponse:(NSString *)imagePath {
     NSLog(@"sendImageResponse: Sending image response.");
     
+    // Ensure the file path starts with 'file://'
+    NSString *filePath = [NSString stringWithFormat:@"file://%@", imagePath];
+    
     // Simulate image metadata
     NSDictionary *imageInfo = @{
         @"timestamp": @([[NSDate date] timeIntervalSince1970] * 1000),
@@ -374,7 +381,7 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
         @"size": @(0.09630203247070312),
         @"height": @(1280),
         @"width": @(960),
-        @"uri": imagePath
+        @"uri": filePath // Use the formatted file path
     };
 
     // Wrap the single image in a similar structure as multiple images
