@@ -377,14 +377,13 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
         @"uri": imagePath
     };
 
-    // Check if `multipleImage` is true
-    BOOL isMultiple = [self.options[@"multipleImage"] boolValue];
+    // Wrap the single image in a similar structure as multiple images
     NSDictionary *response = @{
         @"hasErrors": @NO,
-        @"count": isMultiple ? @([self.options[@"imageCount"] integerValue]) : @1,
-        @"multiple": @(isMultiple),
+        @"count": @1,
+        @"multiple": @NO,
         @"response": @{
-            @"images": isMultiple ? @[imageInfo] : @[imageInfo] // Ensure single image is wrapped in an array
+            @"images": @[imageInfo] // Ensure single image is always wrapped in an array
         }
     };
     
