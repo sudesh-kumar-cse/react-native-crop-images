@@ -90,53 +90,34 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
 - (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary<NSString *,id> *)info {
   NSLog(@"imagePickerController: Image picked, processing.");
   
-  if ([self.options[@"multipleImage"] boolValue]) {
-    NSArray *mediaInfoArray = info[UIImagePickerControllerMediaURL];
-    NSMutableArray *imagePaths = [NSMutableArray array];
-    
-    for (NSDictionary *mediaInfo in mediaInfoArray) {
-      UIImage *selectedImage = mediaInfo[UIImagePickerControllerOriginalImage];
-      NSString *imagePath = [self saveImage:selectedImage];
-      if (imagePath) {
-        [imagePaths addObject:imagePath];
-      }
-    }
-    
-    if (imagePaths.count > 0) {
-      NSLog(@"imagePickerController: Image paths: %@", imagePaths);
-      self.resolve(imagePaths);
-    } else {
-      self.reject(@"ERROR", @"Failed to save images", nil);
-    }
-    
-    [picker dismissViewControllerAnimated:YES completion:nil];
-    return;
-  }
-  
   UIImage *selectedImage = info[UIImagePickerControllerOriginalImage];
   [picker dismissViewControllerAnimated:YES completion:^{
     // Check if cropping is enabled
     if (!self.cropEnabled) {
       NSLog(@"Cropping disabled, processing original image.");
+      NSString *imagePath;
+      
+      // Check cropType to determine how to process the image
       if ([self.cropType isEqualToString:@"circular"]) {
-        // Create circular image even when cropping is disabled
-        CGRect squareRect = CGRectMake(0, 0, selectedImage.size.width, selectedImage.size.width);
-        UIImage *circularImage = [self createCircularImageWithImage:selectedImage inRect:squareRect];
-        NSString *imagePath = [self saveImage:circularImage];
-        if (imagePath) {
-          NSLog(@"pickImage: Selected image path: %@", imagePath);
-          self.resolve(imagePath);
-        } else {
-          self.reject(@"ERROR", @"Failed to save circular image", nil);
-        }
+        // Create a circular image
+        CGSize imageSize = selectedImage.size;
+        CGFloat sideLength = MIN(imageSize.width, imageSize.height); // Use the smaller dimension for a square
+        CGRect circularRect = CGRectMake((imageSize.width - sideLength) / 2, (imageSize.height - sideLength) / 2, sideLength, sideLength);
+        
+        UIImage *circularImage = [self createCircularImageWithImage:selectedImage inRect:circularRect];
+        imagePath = [self saveImage:circularImage];
       } else {
-        NSString *imagePath = [self saveImage:selectedImage];
-        if (imagePath) {
-          NSLog(@"pickImage: Selected image path: %@", imagePath);
-          [self sendImageResponse:imagePath];
-        } else {
-          self.reject(@"ERROR", @"Failed to save original image", nil);
-        }
+        // Save the original image normally
+        imagePath = [self saveImage:selectedImage];
+      }
+      
+      if (imagePath) {
+        NSLog(@"pickImage: Selected image path: %@", imagePath);
+        
+        // Wrap the response in an array format
+        [self sendImageResponse:imagePath]; // Call the method to send response
+      } else {
+        self.reject(@"ERROR", @"Failed to save original image", nil);
       }
       return;
     }
@@ -284,18 +265,24 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
 }
 
 - (UIImage *)createCircularImageWithImage:(UIImage *)image inRect:(CGRect)rect {
-  NSLog(@"createCircularImageWithImage: Creating circular image without cropping.");
+  NSLog(@"createCircularImageWithImage: Creating circular image.");
   UIGraphicsBeginImageContextWithOptions(rect.size, NO, image.scale);
   
-  UIBezierPath *circularPath = [UIBezierPath bezierPathWithOvalInRect:rect];
+  // Create a circular path
+  UIBezierPath *circularPath = [UIBezierPath bezierPathWithOvalInRect:CGRectMake(0, 0, rect.size.width, rect.size.height)];
   [circularPath addClip];
   
-  [image drawInRect:rect];
+  // Calculate the drawing rect to center the image
+  CGFloat xOffset = (rect.size.width - image.size.width) / 2.0;
+  CGFloat yOffset = (rect.size.height - image.size.height) / 2.0;
+  
+  // Draw the image in the circular path
+  [image drawInRect:CGRectMake(xOffset, yOffset, image.size.width, image.size.height)];
   
   UIImage *circularImage = UIGraphicsGetImageFromCurrentImageContext();
   UIGraphicsEndImageContext();
   
-  return [self imageByMakingBackgroundTransparent:circularImage];
+  return circularImage; // Return the circular image
 }
 
 - (void)picker:(PHPickerViewController *)picker didFinishPicking:(NSArray<PHPickerResult *> *)results {
@@ -383,7 +370,9 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
         @"size": @(0.09630203247070312),
         @"height": @(1280),
         @"width": @(960),
-        @"uri": filePath // Use the formatted file path
+        @"uri": filePath,
+        @"imageQuality": @(self.options[@"imageQuality"] ? [self.options[@"imageQuality"] floatValue] : 100),
+        @"maxFileSize": @(self.options[@"maxFileSize"] ? [self.options[@"maxFileSize"] floatValue] : 0)
     };
 
     // Wrap the single image in a similar structure as multiple images
