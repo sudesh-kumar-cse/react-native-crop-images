@@ -243,6 +243,8 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
     return nil;
   }
   
+  NSLog(@"Image data size: %lu bytes", (unsigned long)imageData.length); // Log image data size
+  
   NSString *documentsPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
   NSString *fileName = [NSString stringWithFormat:@"image_%@.png", [[NSUUID UUID] UUIDString]];
   NSString *filePath = [documentsPath stringByAppendingPathComponent:fileName];
