@@ -186,7 +186,7 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
 }
 
 - (void)cropViewController:(TOCropViewController *)cropViewController didCropToImage:(UIImage *)image withRect:(CGRect)cropRect angle:(NSInteger)angle {
-  NSLog(@"cropViewController: Rectangle image cropped.");
+  NSLog(@"cropViewController: Rectangle image cropped. Image size: %@", NSStringFromCGSize(image.size));
   [cropViewController dismissViewControllerAnimated:YES completion:^{
     // Save the cropped rectangle image
     NSString *croppedImagePath = [self saveImage:image]; 
