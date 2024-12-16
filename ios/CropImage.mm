@@ -133,7 +133,7 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
         NSString *imagePath = [self saveImage:selectedImage];
         if (imagePath) {
           NSLog(@"pickImage: Selected image path: %@", imagePath);
-          self.resolve(imagePath);
+          [self sendImageResponse:imagePath];
         } else {
           self.reject(@"ERROR", @"Failed to save original image", nil);
         }
@@ -319,11 +319,76 @@ RCT_EXPORT_METHOD(configure:(NSDictionary *)options) {
   
   dispatch_group_notify(group, dispatch_get_main_queue(), ^{
     if (imagePaths.count > 0) {
-      self.resolve(imagePaths);
+     [self sendImageResponseWithPaths:imagePaths];
     } else {
       self.reject(@"ERROR", @"Failed to save images", nil);
     }
   });
+  
+}
+
+- (void)sendImageResponseWithPaths:(NSArray<NSString *> *)imagePaths {
+    NSLog(@"sendImageResponseWithPaths: Formatting image response for multiple images.");
+
+    NSMutableArray *images = [NSMutableArray array];
+    NSTimeInterval timestamp = [[NSDate date] timeIntervalSince1970] * 1000; // Current timestamp in milliseconds
+
+    for (NSInteger i = 0; i < imagePaths.count; i++) {
+        NSString *imagePath = imagePaths[i];
+        // Simulated metadata for each image
+        NSDictionary *imageInfo = @{
+            @"timestamp": @(timestamp),
+            @"fileName": [imagePath lastPathComponent],
+            @"type": @"image/jpeg",
+            @"index": @(i),
+            @"size": @(0.09630203247070312),
+            @"height": @(1280),
+            @"width": @(960),
+            @"uri": [NSString stringWithFormat:@"file://%@", imagePath]
+        };
+        [images addObject:imageInfo];
+    }
+
+    // Build the response JSON
+    NSDictionary *response = @{
+        @"hasErrors": @NO,
+        @"count": @(images.count),
+        @"multiple": @YES,
+        @"response": @{
+            @"images": images
+        }
+    };
+
+    self.resolve(response); // Send the formatted response back to JavaScript
+}
+
+- (void)sendImageResponse:(NSString *)imagePath {
+    NSLog(@"sendImageResponse: Sending image response.");
+    
+    // Simulate image metadata
+    NSDictionary *imageInfo = @{
+        @"timestamp": @([[NSDate date] timeIntervalSince1970] * 1000),
+        @"fileName": [imagePath lastPathComponent],
+        @"type": @"image/jpeg",
+        @"index": @(0),
+        @"size": @(0.09630203247070312),
+        @"height": @(1280),
+        @"width": @(960),
+        @"uri": imagePath
+    };
+
+    // Check if `multipleImage` is true
+    BOOL isMultiple = [self.options[@"multipleImage"] boolValue];
+    NSDictionary *response = @{
+        @"hasErrors": @NO,
+        @"count": isMultiple ? @([self.options[@"imageCount"] integerValue]) : @1,
+        @"multiple": @(isMultiple),
+        @"response": @{
+            @"images": isMultiple ? @[imageInfo] : @[imageInfo] // Ensure single image is wrapped in an array
+        }
+    };
+    
+    self.resolve(response);
 }
 
 @end
